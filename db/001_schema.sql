@@ -1,0 +1,16 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE TYPE role_t AS ENUM ('super_admin','hr','manager','employee','it_admin');
+CREATE TABLE departments(id serial PRIMARY KEY, name text UNIQUE NOT NULL);
+CREATE TABLE users(id serial PRIMARY KEY, email text UNIQUE NOT NULL, password_hash text NOT NULL, role role_t NOT NULL, full_name text NOT NULL, dept_id int REFERENCES departments, manager_id int REFERENCES users, device_user_id text UNIQUE, base_salary numeric(12,2) DEFAULT 0, active bool DEFAULT true);
+CREATE TABLE shifts(id serial PRIMARY KEY, name text, start_time time, end_time time, grace_min int DEFAULT 10);
+CREATE TABLE punches(id bigserial PRIMARY KEY, user_id int REFERENCES users, punched_at timestamptz NOT NULL, source text, device_id text, UNIQUE(user_id, punched_at));
+CREATE TABLE daily_attendance(id bigserial PRIMARY KEY, user_id int REFERENCES users, day date, first_in timestamptz, last_out timestamptz, worked_min int, late_min int DEFAULT 0, early_min int DEFAULT 0, overtime_min int DEFAULT 0, status text, anomaly text, UNIQUE(user_id, day));
+CREATE TABLE corrections(id serial PRIMARY KEY, user_id int REFERENCES users, day date, new_in timestamptz, new_out timestamptz, reason text NOT NULL, attachment_path text, status text DEFAULT 'pending_manager', created_at timestamptz DEFAULT now());
+CREATE TABLE leaves(id serial PRIMARY KEY, user_id int REFERENCES users, from_date date, to_date date, paid bool DEFAULT true, status text DEFAULT 'pending');
+CREATE TABLE periods(ym char(7) PRIMARY KEY, status text DEFAULT 'open', closed_by int, closed_at timestamptz);
+CREATE TABLE payroll_items(id serial PRIMARY KEY, user_id int REFERENCES users, ym char(7), kind text, amount numeric(12,2), note text);
+CREATE TABLE payroll_runs(id serial PRIMARY KEY, ym char(7), user_id int, gross numeric(12,2), deductions numeric(12,2), net numeric(12,2), detail jsonb, UNIQUE(ym,user_id));
+CREATE TABLE notifications(id serial PRIMARY KEY, user_id int, message text, read bool DEFAULT false, created_at timestamptz DEFAULT now());
+CREATE TABLE audit_log(id bigserial PRIMARY KEY, actor int, action text, entity text, entity_id text, payload jsonb, prev_hash text, hash text, at timestamptz DEFAULT now());
+CREATE FUNCTION audit_immutable() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'audit_log is immutable'; END $$ LANGUAGE plpgsql;
+CREATE TRIGGER audit_no_change BEFORE UPDATE OR DELETE ON audit_log FOR EACH ROW EXECUTE FUNCTION audit_immutable();
